@@ -23,9 +23,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.cloud.client.loadbalancer.LoadBalancedRetryFactory;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
+import org.springframework.cloud.client.loadbalancer.LoadBalancerProperties;
+import org.springframework.cloud.loadbalancer.support.LoadBalancerClientFactory;
 import org.springframework.cloud.openfeign.clientconfig.OkHttpFeignConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
@@ -39,16 +44,32 @@ import org.springframework.context.annotation.Import;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(OkHttpClient.class)
 @ConditionalOnProperty("feign.okhttp.enabled")
-@ConditionalOnBean(LoadBalancerClient.class)
+@ConditionalOnBean({ LoadBalancerClient.class, LoadBalancerClientFactory.class })
 @Import(OkHttpFeignConfiguration.class)
+@EnableConfigurationProperties(LoadBalancerProperties.class)
 class OkHttpFeignLoadBalancerConfiguration {
 
 	@Bean
 	@ConditionalOnMissingBean
-	public Client feignClient(okhttp3.OkHttpClient okHttpClient,
-			LoadBalancerClient loadBalancerClient) {
+	@Conditional(OnRetryNotEnabledCondition.class)
+	public Client feignClient(okhttp3.OkHttpClient okHttpClient, LoadBalancerClient loadBalancerClient,
+			LoadBalancerProperties properties, LoadBalancerClientFactory loadBalancerClientFactory) {
 		OkHttpClient delegate = new OkHttpClient(okHttpClient);
-		return new FeignBlockingLoadBalancerClient(delegate, loadBalancerClient);
+		return new FeignBlockingLoadBalancerClient(delegate, loadBalancerClient, properties, loadBalancerClientFactory);
+	}
+
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnClass(name = "org.springframework.retry.support.RetryTemplate")
+	@ConditionalOnBean(LoadBalancedRetryFactory.class)
+	@ConditionalOnProperty(value = "spring.cloud.loadbalancer.retry.enabled", havingValue = "true",
+			matchIfMissing = true)
+	public Client feignRetryClient(LoadBalancerClient loadBalancerClient, okhttp3.OkHttpClient okHttpClient,
+			LoadBalancedRetryFactory loadBalancedRetryFactory, LoadBalancerProperties properties,
+			LoadBalancerClientFactory loadBalancerClientFactory) {
+		OkHttpClient delegate = new OkHttpClient(okHttpClient);
+		return new RetryableFeignBlockingLoadBalancerClient(delegate, loadBalancerClient, loadBalancedRetryFactory,
+				properties, loadBalancerClientFactory);
 	}
 
 }

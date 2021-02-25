@@ -19,7 +19,6 @@ package org.springframework.cloud.openfeign;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.fasterxml.jackson.databind.Module;
 import feign.Contract;
 import feign.Feign;
 import feign.Logger;
@@ -28,26 +27,31 @@ import feign.codec.Decoder;
 import feign.codec.Encoder;
 import feign.form.MultipartFormContentProcessor;
 import feign.form.spring.SpringFormEncoder;
+import feign.micrometer.MicrometerCapability;
 import feign.optionals.OptionalDecoder;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import org.springframework.beans.factory.ObjectFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.web.SpringDataWebProperties;
 import org.springframework.boot.autoconfigure.http.HttpMessageConverters;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreaker;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.cloud.openfeign.clientconfig.FeignClientConfigurer;
 import org.springframework.cloud.openfeign.support.AbstractFormWriter;
-import org.springframework.cloud.openfeign.support.PageJacksonModule;
 import org.springframework.cloud.openfeign.support.PageableSpringEncoder;
 import org.springframework.cloud.openfeign.support.ResponseEntityDecoder;
-import org.springframework.cloud.openfeign.support.SortJacksonModule;
 import org.springframework.cloud.openfeign.support.SpringDecoder;
 import org.springframework.cloud.openfeign.support.SpringEncoder;
 import org.springframework.cloud.openfeign.support.SpringMvcContract;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 import org.springframework.core.convert.ConversionService;
@@ -60,6 +64,7 @@ import static feign.form.ContentType.MULTIPART;
  * @author Dave Syer
  * @author Venil Noronha
  * @author Darren Foong
+ * @author Jonatan Ivanov
  */
 @Configuration(proxyBeanMethods = false)
 public class FeignClientsConfiguration {
@@ -79,11 +84,13 @@ public class FeignClientsConfiguration {
 	@Autowired(required = false)
 	private SpringDataWebProperties springDataWebProperties;
 
+	@Autowired(required = false)
+	private FeignClientProperties feignClientProperties;
+
 	@Bean
 	@ConditionalOnMissingBean
 	public Decoder feignDecoder() {
-		return new OptionalDecoder(
-				new ResponseEntityDecoder(new SpringDecoder(this.messageConverters)));
+		return new OptionalDecoder(new ResponseEntityDecoder(new SpringDecoder(this.messageConverters)));
 	}
 
 	@Bean
@@ -96,18 +103,13 @@ public class FeignClientsConfiguration {
 	@Bean
 	@ConditionalOnClass(name = "org.springframework.data.domain.Pageable")
 	@ConditionalOnMissingBean
-	public Encoder feignEncoderPageable(
-			ObjectProvider<AbstractFormWriter> formWriterProvider) {
-		PageableSpringEncoder encoder = new PageableSpringEncoder(
-				springEncoder(formWriterProvider));
+	public Encoder feignEncoderPageable(ObjectProvider<AbstractFormWriter> formWriterProvider) {
+		PageableSpringEncoder encoder = new PageableSpringEncoder(springEncoder(formWriterProvider));
 
 		if (springDataWebProperties != null) {
-			encoder.setPageParameter(
-					springDataWebProperties.getPageable().getPageParameter());
-			encoder.setSizeParameter(
-					springDataWebProperties.getPageable().getSizeParameter());
-			encoder.setSortParameter(
-					springDataWebProperties.getSort().getSortParameter());
+			encoder.setPageParameter(springDataWebProperties.getPageable().getPageParameter());
+			encoder.setSizeParameter(springDataWebProperties.getPageable().getSizeParameter());
+			encoder.setSortParameter(springDataWebProperties.getSort().getSortParameter());
 		}
 		return encoder;
 	}
@@ -115,7 +117,8 @@ public class FeignClientsConfiguration {
 	@Bean
 	@ConditionalOnMissingBean
 	public Contract feignContract(ConversionService feignConversionService) {
-		return new SpringMvcContract(this.parameterProcessors, feignConversionService);
+		boolean decodeSlash = feignClientProperties == null || feignClientProperties.isDecodeSlash();
+		return new SpringMvcContract(this.parameterProcessors, feignConversionService, decodeSlash);
 	}
 
 	@Bean
@@ -134,28 +137,9 @@ public class FeignClientsConfiguration {
 	}
 
 	@Bean
-	@Scope("prototype")
-	@ConditionalOnMissingBean
-	public Feign.Builder feignBuilder(Retryer retryer) {
-		return Feign.builder().retryer(retryer);
-	}
-
-	@Bean
 	@ConditionalOnMissingBean(FeignLoggerFactory.class)
 	public FeignLoggerFactory feignLoggerFactory() {
 		return new DefaultFeignLoggerFactory(this.logger);
-	}
-
-	@Bean
-	@ConditionalOnClass(name = "org.springframework.data.domain.Page")
-	public Module pageJacksonModule() {
-		return new PageJacksonModule();
-	}
-
-	@Bean
-	@ConditionalOnClass(name = "org.springframework.data.domain.Page")
-	public Module sortModule() {
-		return new SortJacksonModule();
 	}
 
 	@Bean
@@ -169,8 +153,7 @@ public class FeignClientsConfiguration {
 		AbstractFormWriter formWriter = formWriterProvider.getIfAvailable();
 
 		if (formWriter != null) {
-			return new SpringEncoder(new SpringPojoFormEncoder(formWriter),
-					this.messageConverters);
+			return new SpringEncoder(new SpringPojoFormEncoder(formWriter), this.messageConverters);
 		}
 		else {
 			return new SpringEncoder(new SpringFormEncoder(), this.messageConverters);
@@ -182,9 +165,58 @@ public class FeignClientsConfiguration {
 		SpringPojoFormEncoder(AbstractFormWriter formWriter) {
 			super();
 
-			MultipartFormContentProcessor processor = (MultipartFormContentProcessor) getContentProcessor(
-					MULTIPART);
+			MultipartFormContentProcessor processor = (MultipartFormContentProcessor) getContentProcessor(MULTIPART);
 			processor.addFirstWriter(formWriter);
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	@Conditional(FeignCircuitBreakerDisabledConditions.class)
+	protected static class DefaultFeignBuilderConfiguration {
+
+		@Bean
+		@Scope("prototype")
+		@ConditionalOnMissingBean
+		public Feign.Builder feignBuilder(Retryer retryer) {
+			return Feign.builder().retryer(retryer);
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	@ConditionalOnClass(CircuitBreaker.class)
+	@ConditionalOnProperty("feign.circuitbreaker.enabled")
+	protected static class CircuitBreakerPresentFeignBuilderConfiguration {
+
+		@Bean
+		@Scope("prototype")
+		@ConditionalOnMissingBean({ Feign.Builder.class, CircuitBreakerFactory.class })
+		public Feign.Builder defaultFeignBuilder(Retryer retryer) {
+			return Feign.builder().retryer(retryer);
+		}
+
+		@Bean
+		@Scope("prototype")
+		@ConditionalOnMissingBean
+		@ConditionalOnBean(CircuitBreakerFactory.class)
+		public Feign.Builder circuitBreakerFeignBuilder() {
+			return FeignCircuitBreaker.builder();
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	@ConditionalOnBean(type = "io.micrometer.core.instrument.MeterRegistry")
+	@ConditionalOnClass(name = "feign.micrometer.MicrometerCapability")
+	@ConditionalOnProperty(name = "feign.metrics.enabled", matchIfMissing = true)
+	@Conditional(FeignClientMetricsEnabledCondition.class)
+	protected static class MetricsConfiguration {
+
+		@Bean
+		@ConditionalOnMissingBean
+		public MicrometerCapability micrometerCapability(MeterRegistry meterRegistry) {
+			return new MicrometerCapability(meterRegistry);
 		}
 
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2020 the original author or authors.
+ * Copyright 2013-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.cloud.openfeign.encoding;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.Test;
@@ -26,17 +27,17 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.data.rest.RepositoryRestMvcAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.cloud.client.DefaultServiceInstance;
 import org.springframework.cloud.loadbalancer.annotation.LoadBalancerClient;
 import org.springframework.cloud.loadbalancer.core.ServiceInstanceListSupplier;
+import org.springframework.cloud.loadbalancer.support.ServiceInstanceListSuppliers;
 import org.springframework.cloud.openfeign.EnableFeignClients;
-import org.springframework.cloud.openfeign.FeignClientsConfiguration;
 import org.springframework.cloud.openfeign.encoding.app.client.InvoiceClient;
 import org.springframework.cloud.openfeign.encoding.app.domain.Invoice;
 import org.springframework.cloud.openfeign.test.NoSecurityConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.core.env.Environment;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -53,12 +54,10 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
  * Tests the pagination encoding.
  *
  * @author Charlie Mordant.
+ * @author Hyeonmin Park
  */
-@SpringBootTest(classes = FeignPageableEncodingTests.Application.class,
-		webEnvironment = RANDOM_PORT,
-		value = { "feign.compression.request.enabled=true",
-				"hystrix.command.default.execution.isolation.strategy=SEMAPHORE",
-				"ribbon.OkToRetryOnAllOperations=false" })
+@SpringBootTest(classes = FeignPageableEncodingTests.Application.class, webEnvironment = RANDOM_PORT,
+		value = { "feign.compression.request.enabled=true", "feign.autoconfiguration.jackson.enabled=true" })
 @RunWith(SpringJUnit4ClassRunner.class)
 public class FeignPageableEncodingTests {
 
@@ -72,8 +71,7 @@ public class FeignPageableEncodingTests {
 		Pageable pageable = PageRequest.of(0, 10, Sort.Direction.ASC, "sortProperty");
 
 		// when
-		final ResponseEntity<Page<Invoice>> response = this.invoiceClient
-				.getInvoicesPaged(pageable);
+		final ResponseEntity<Page<Invoice>> response = this.invoiceClient.getInvoicesPaged(pageable);
 
 		// then
 		assertThat(response).isNotNull();
@@ -81,8 +79,7 @@ public class FeignPageableEncodingTests {
 		assertThat(response.getBody()).isNotNull();
 		assertThat(pageable.getPageSize()).isEqualTo(response.getBody().getSize());
 		assertThat(response.getBody().getPageable().getSort()).hasSize(1);
-		Optional<Sort.Order> optionalOrder = response.getBody().getPageable().getSort()
-				.get().findFirst();
+		Optional<Sort.Order> optionalOrder = response.getBody().getPageable().getSort().get().findFirst();
 		if (optionalOrder.isPresent()) {
 			Sort.Order order = optionalOrder.get();
 			assertThat(order.getDirection()).isEqualTo(Sort.Direction.ASC);
@@ -91,13 +88,70 @@ public class FeignPageableEncodingTests {
 
 	}
 
+	@Test
+	public void testPageableWithDescDirection() {
+		// given
+		Pageable pageable = PageRequest.of(0, 10, Sort.Direction.DESC, "sortProperty");
+
+		// when
+		final ResponseEntity<Page<Invoice>> response = this.invoiceClient.getInvoicesPaged(pageable);
+
+		// then
+		assertThat(response).isNotNull();
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).isNotNull();
+		assertThat(pageable.getPageSize()).isEqualTo(response.getBody().getSize());
+
+		Sort sort = response.getBody().getPageable().getSort();
+		assertThat(sort).hasSize(1);
+		assertThat(sort.get()).hasSize(1);
+
+		Optional<Sort.Order> optionalOrder = sort.get().findFirst();
+		assertThat(optionalOrder.isPresent()).isTrue();
+
+		Sort.Order order = optionalOrder.get();
+		assertThat(order.getDirection()).isEqualTo(Sort.Direction.DESC);
+		assertThat(order.getProperty()).isEqualTo("sortProperty");
+
+	}
+
+	@Test
+	public void testPageableWithMultipleSort() {
+		// given
+		Pageable pageable = PageRequest.of(0, 10,
+				Sort.by(Sort.Order.desc("sortProperty1"), Sort.Order.asc("sortProperty2")));
+
+		// when
+		final ResponseEntity<Page<Invoice>> response = this.invoiceClient.getInvoicesPaged(pageable);
+
+		// then
+		assertThat(response).isNotNull();
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).isNotNull();
+		assertThat(pageable.getPageSize()).isEqualTo(response.getBody().getSize());
+
+		Sort sort = response.getBody().getPageable().getSort();
+		assertThat(sort).hasSize(2);
+
+		List<Sort.Order> orderList = sort.toList();
+		assertThat(orderList).hasSize(2);
+
+		Sort.Order firstOrder = orderList.get(0);
+		assertThat(firstOrder.getDirection()).isEqualTo(Sort.Direction.DESC);
+		assertThat(firstOrder.getProperty()).isEqualTo("sortProperty1");
+
+		Sort.Order secondOrder = orderList.get(1);
+		assertThat(secondOrder.getDirection()).isEqualTo(Sort.Direction.ASC);
+		assertThat(secondOrder.getProperty()).isEqualTo("sortProperty2");
+
+	}
+
 	@EnableFeignClients(clients = InvoiceClient.class)
 	@LoadBalancerClient(name = "local", configuration = LocalClientConfiguration.class)
-	@SpringBootApplication(
-			scanBasePackages = "org.springframework.cloud.openfeign.encoding.app",
+	@SpringBootApplication(scanBasePackages = "org.springframework.cloud.openfeign.encoding.app",
 			exclude = { RepositoryRestMvcAutoConfiguration.class })
 	@EnableSpringDataWebSupport
-	@Import({ NoSecurityConfiguration.class, FeignClientsConfiguration.class })
+	@Import({ NoSecurityConfiguration.class })
 	public static class Application {
 
 	}
@@ -109,9 +163,9 @@ public class FeignPageableEncodingTests {
 		private int port = 0;
 
 		@Bean
-		public ServiceInstanceListSupplier staticServiceInstanceListSupplier(
-				Environment env) {
-			return ServiceInstanceListSupplier.fixed(env).instance(port, "local").build();
+		public ServiceInstanceListSupplier staticServiceInstanceListSupplier() {
+			return ServiceInstanceListSuppliers.from("local",
+					new DefaultServiceInstance("local-1", "local", "localhost", port, false));
 		}
 
 	}

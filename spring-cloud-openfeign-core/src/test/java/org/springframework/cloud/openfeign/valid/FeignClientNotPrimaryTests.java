@@ -26,14 +26,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.cloud.client.DefaultServiceInstance;
 import org.springframework.cloud.loadbalancer.annotation.LoadBalancerClient;
 import org.springframework.cloud.loadbalancer.core.ServiceInstanceListSupplier;
+import org.springframework.cloud.loadbalancer.support.ServiceInstanceListSuppliers;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.core.env.Environment;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -48,11 +49,10 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
  * @author Jakub Narloch
  */
 @RunWith(SpringJUnit4ClassRunner.class)
-@SpringBootTest(classes = FeignClientNotPrimaryTests.Application.class,
-		webEnvironment = RANDOM_PORT,
+@SpringBootTest(classes = FeignClientNotPrimaryTests.Application.class, webEnvironment = RANDOM_PORT,
 		value = { "spring.application.name=feignclientnotprimarytest",
-				"logging.level.org.springframework.cloud.openfeign.valid=DEBUG",
-				"feign.httpclient.enabled=false", "feign.okhttp.enabled=false" })
+				"logging.level.org.springframework.cloud.openfeign.valid=DEBUG", "feign.httpclient.enabled=false",
+				"feign.okhttp.enabled=false" })
 @DirtiesContext
 public class FeignClientNotPrimaryTests {
 
@@ -66,8 +66,7 @@ public class FeignClientNotPrimaryTests {
 
 	@Test
 	public void testClientType() {
-		assertThat(this.testClient).as("testClient was of wrong type")
-				.isInstanceOf(PrimaryTestClient.class);
+		assertThat(this.testClient).as("testClient was of wrong type").isInstanceOf(PrimaryTestClient.class);
 	}
 
 	@Test
@@ -92,8 +91,7 @@ public class FeignClientNotPrimaryTests {
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration
 	@RestController
-	@EnableFeignClients(clients = { TestClient.class },
-			defaultConfiguration = TestDefaultFeignConfig.class)
+	@EnableFeignClients(clients = { TestClient.class }, defaultConfiguration = TestDefaultFeignConfig.class)
 	@LoadBalancerClient(name = "localapp", configuration = LocalClientConfiguration.class)
 	protected static class Application {
 
@@ -158,10 +156,9 @@ public class FeignClientNotPrimaryTests {
 		private int port = 0;
 
 		@Bean
-		public ServiceInstanceListSupplier staticServiceInstanceListSupplier(
-				Environment env) {
-			return ServiceInstanceListSupplier.fixed(env).instance(port, "localapp")
-					.build();
+		public ServiceInstanceListSupplier staticServiceInstanceListSupplier() {
+			return ServiceInstanceListSuppliers.from("local",
+					new DefaultServiceInstance("local-1", "local", "localhost", port, false));
 		}
 
 	}

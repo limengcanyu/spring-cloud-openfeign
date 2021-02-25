@@ -16,11 +16,13 @@
 
 package org.springframework.cloud.openfeign;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import feign.Capability;
 import feign.Contract;
 import feign.ExceptionPropagationPolicy;
 import feign.Logger;
@@ -34,6 +36,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * @author Eko Kurniawan Khannedy
+ * @author Ilia Ilinykh
+ * @author Ram Anaswara
+ * @author Jonatan Ivanov
  */
 @ConfigurationProperties("feign.client")
 public class FeignClientProperties {
@@ -44,8 +49,14 @@ public class FeignClientProperties {
 
 	private Map<String, FeignClientConfiguration> config = new HashMap<>();
 
+	/**
+	 * Feign clients do not encode slash `/` characters by default. To change this
+	 * behavior, set the `decodeSlash` to `false`.
+	 */
+	private boolean decodeSlash = true;
+
 	public boolean isDefaultToProperties() {
-		return this.defaultToProperties;
+		return defaultToProperties;
 	}
 
 	public void setDefaultToProperties(boolean defaultToProperties) {
@@ -53,7 +64,7 @@ public class FeignClientProperties {
 	}
 
 	public String getDefaultConfig() {
-		return this.defaultConfig;
+		return defaultConfig;
 	}
 
 	public void setDefaultConfig(String defaultConfig) {
@@ -61,11 +72,19 @@ public class FeignClientProperties {
 	}
 
 	public Map<String, FeignClientConfiguration> getConfig() {
-		return this.config;
+		return config;
 	}
 
 	public void setConfig(Map<String, FeignClientConfiguration> config) {
 		this.config = config;
+	}
+
+	public boolean isDecodeSlash() {
+		return decodeSlash;
+	}
+
+	public void setDecodeSlash(boolean decodeSlash) {
+		this.decodeSlash = decodeSlash;
 	}
 
 	@Override
@@ -77,14 +96,13 @@ public class FeignClientProperties {
 			return false;
 		}
 		FeignClientProperties that = (FeignClientProperties) o;
-		return this.defaultToProperties == that.defaultToProperties
-				&& Objects.equals(this.defaultConfig, that.defaultConfig)
-				&& Objects.equals(this.config, that.config);
+		return defaultToProperties == that.defaultToProperties && Objects.equals(defaultConfig, that.defaultConfig)
+				&& Objects.equals(config, that.config) && Objects.equals(decodeSlash, that.decodeSlash);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(this.defaultToProperties, this.defaultConfig, this.config);
+		return Objects.hash(defaultToProperties, defaultConfig, config, decodeSlash);
 	}
 
 	/**
@@ -104,6 +122,10 @@ public class FeignClientProperties {
 
 		private List<Class<RequestInterceptor>> requestInterceptors;
 
+		private Map<String, Collection<String>> defaultRequestHeaders;
+
+		private Map<String, Collection<String>> defaultQueryParameters;
+
 		private Boolean decode404;
 
 		private Class<Decoder> decoder;
@@ -114,8 +136,12 @@ public class FeignClientProperties {
 
 		private ExceptionPropagationPolicy exceptionPropagationPolicy;
 
+		private List<Class<Capability>> capabilities;
+
+		private MetricsProperties metrics;
+
 		public Logger.Level getLoggerLevel() {
-			return this.loggerLevel;
+			return loggerLevel;
 		}
 
 		public void setLoggerLevel(Logger.Level loggerLevel) {
@@ -123,7 +149,7 @@ public class FeignClientProperties {
 		}
 
 		public Integer getConnectTimeout() {
-			return this.connectTimeout;
+			return connectTimeout;
 		}
 
 		public void setConnectTimeout(Integer connectTimeout) {
@@ -131,7 +157,7 @@ public class FeignClientProperties {
 		}
 
 		public Integer getReadTimeout() {
-			return this.readTimeout;
+			return readTimeout;
 		}
 
 		public void setReadTimeout(Integer readTimeout) {
@@ -139,7 +165,7 @@ public class FeignClientProperties {
 		}
 
 		public Class<Retryer> getRetryer() {
-			return this.retryer;
+			return retryer;
 		}
 
 		public void setRetryer(Class<Retryer> retryer) {
@@ -147,7 +173,7 @@ public class FeignClientProperties {
 		}
 
 		public Class<ErrorDecoder> getErrorDecoder() {
-			return this.errorDecoder;
+			return errorDecoder;
 		}
 
 		public void setErrorDecoder(Class<ErrorDecoder> errorDecoder) {
@@ -155,16 +181,31 @@ public class FeignClientProperties {
 		}
 
 		public List<Class<RequestInterceptor>> getRequestInterceptors() {
-			return this.requestInterceptors;
+			return requestInterceptors;
 		}
 
-		public void setRequestInterceptors(
-				List<Class<RequestInterceptor>> requestInterceptors) {
+		public void setRequestInterceptors(List<Class<RequestInterceptor>> requestInterceptors) {
 			this.requestInterceptors = requestInterceptors;
 		}
 
+		public Map<String, Collection<String>> getDefaultRequestHeaders() {
+			return defaultRequestHeaders;
+		}
+
+		public void setDefaultRequestHeaders(Map<String, Collection<String>> defaultRequestHeaders) {
+			this.defaultRequestHeaders = defaultRequestHeaders;
+		}
+
+		public Map<String, Collection<String>> getDefaultQueryParameters() {
+			return defaultQueryParameters;
+		}
+
+		public void setDefaultQueryParameters(Map<String, Collection<String>> defaultQueryParameters) {
+			this.defaultQueryParameters = defaultQueryParameters;
+		}
+
 		public Boolean getDecode404() {
-			return this.decode404;
+			return decode404;
 		}
 
 		public void setDecode404(Boolean decode404) {
@@ -172,7 +213,7 @@ public class FeignClientProperties {
 		}
 
 		public Class<Decoder> getDecoder() {
-			return this.decoder;
+			return decoder;
 		}
 
 		public void setDecoder(Class<Decoder> decoder) {
@@ -180,7 +221,7 @@ public class FeignClientProperties {
 		}
 
 		public Class<Encoder> getEncoder() {
-			return this.encoder;
+			return encoder;
 		}
 
 		public void setEncoder(Class<Encoder> encoder) {
@@ -188,7 +229,7 @@ public class FeignClientProperties {
 		}
 
 		public Class<Contract> getContract() {
-			return this.contract;
+			return contract;
 		}
 
 		public void setContract(Class<Contract> contract) {
@@ -199,9 +240,24 @@ public class FeignClientProperties {
 			return exceptionPropagationPolicy;
 		}
 
-		public void setExceptionPropagationPolicy(
-				ExceptionPropagationPolicy exceptionPropagationPolicy) {
+		public void setExceptionPropagationPolicy(ExceptionPropagationPolicy exceptionPropagationPolicy) {
 			this.exceptionPropagationPolicy = exceptionPropagationPolicy;
+		}
+
+		public List<Class<Capability>> getCapabilities() {
+			return capabilities;
+		}
+
+		public void setCapabilities(List<Class<Capability>> capabilities) {
+			this.capabilities = capabilities;
+		}
+
+		public MetricsProperties getMetrics() {
+			return metrics;
+		}
+
+		public void setMetrics(MetricsProperties metrics) {
+			this.metrics = metrics;
 		}
 
 		@Override
@@ -213,26 +269,58 @@ public class FeignClientProperties {
 				return false;
 			}
 			FeignClientConfiguration that = (FeignClientConfiguration) o;
-			return this.loggerLevel == that.loggerLevel
-					&& Objects.equals(this.connectTimeout, that.connectTimeout)
-					&& Objects.equals(this.readTimeout, that.readTimeout)
-					&& Objects.equals(this.retryer, that.retryer)
-					&& Objects.equals(this.errorDecoder, that.errorDecoder)
-					&& Objects.equals(this.requestInterceptors, that.requestInterceptors)
-					&& Objects.equals(this.decode404, that.decode404)
-					&& Objects.equals(this.encoder, that.encoder)
-					&& Objects.equals(this.decoder, that.decoder)
-					&& Objects.equals(this.contract, that.contract)
-					&& Objects.equals(this.exceptionPropagationPolicy,
-							that.exceptionPropagationPolicy);
+			return loggerLevel == that.loggerLevel && Objects.equals(connectTimeout, that.connectTimeout)
+					&& Objects.equals(readTimeout, that.readTimeout) && Objects.equals(retryer, that.retryer)
+					&& Objects.equals(errorDecoder, that.errorDecoder)
+					&& Objects.equals(requestInterceptors, that.requestInterceptors)
+					&& Objects.equals(decode404, that.decode404) && Objects.equals(encoder, that.encoder)
+					&& Objects.equals(decoder, that.decoder) && Objects.equals(contract, that.contract)
+					&& Objects.equals(exceptionPropagationPolicy, that.exceptionPropagationPolicy)
+					&& Objects.equals(defaultRequestHeaders, that.defaultRequestHeaders)
+					&& Objects.equals(defaultQueryParameters, that.defaultQueryParameters)
+					&& Objects.equals(capabilities, that.capabilities) && Objects.equals(metrics, that.metrics);
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(this.loggerLevel, this.connectTimeout, this.readTimeout,
-					this.retryer, this.errorDecoder, this.requestInterceptors,
-					this.decode404, this.encoder, this.decoder, this.contract,
-					this.exceptionPropagationPolicy);
+			return Objects.hash(loggerLevel, connectTimeout, readTimeout, retryer, errorDecoder, requestInterceptors,
+					decode404, encoder, decoder, contract, exceptionPropagationPolicy, defaultQueryParameters,
+					defaultRequestHeaders, capabilities, metrics);
+		}
+
+	}
+
+	/**
+	 * Metrics configuration for Feign Client.
+	 */
+	public static class MetricsProperties {
+
+		private Boolean enabled = true;
+
+		public Boolean getEnabled() {
+			return enabled;
+		}
+
+		public void setEnabled(Boolean enabled) {
+			this.enabled = enabled;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+
+			MetricsProperties that = (MetricsProperties) o;
+			return Objects.equals(enabled, that.enabled);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(enabled);
 		}
 
 	}

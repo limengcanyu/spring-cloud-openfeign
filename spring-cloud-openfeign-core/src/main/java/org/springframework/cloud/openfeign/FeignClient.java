@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2020 the original author or authors.
+ * Copyright 2013-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.springframework.core.annotation.AliasFor;
  *
  * @author Spencer Gibb
  * @author Venil Noronha
+ * @author Olga Maciaszek-Sharma
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -50,14 +51,6 @@ public @interface FeignClient {
 	String value() default "";
 
 	/**
-	 * The service id with optional protocol prefix. Synonym for {@link #value() value}.
-	 * @deprecated use {@link #name() name} instead
-	 * @return the service id with optional protocol prefix
-	 */
-	@Deprecated
-	String serviceId() default "";
-
-	/**
 	 * This will be used as the bean name instead of name if present, but will not be used
 	 * as a service id.
 	 * @return bean name instead of name if present
@@ -73,8 +66,27 @@ public @interface FeignClient {
 
 	/**
 	 * @return the <code>@Qualifier</code> value for the feign client.
+	 * @deprecated in favour of {@link #qualifiers()}.
+	 *
+	 * If both {@link #qualifier()} and {@link #qualifiers()} are present, we will use the
+	 * latter, unless the array returned by {@link #qualifiers()} is empty or only
+	 * contains <code>null</code> or whitespace values, in which case we'll fall back
+	 * first to {@link #qualifier()} and, if that's also not present, to the default =
+	 * <code>contextId + "FeignClient"</code>.
 	 */
+	@Deprecated
 	String qualifier() default "";
+
+	/**
+	 * @return the <code>@Qualifiers</code> value for the feign client.
+	 *
+	 * If both {@link #qualifier()} and {@link #qualifiers()} are present, we will use the
+	 * latter, unless the array returned by {@link #qualifiers()} is empty or only
+	 * contains <code>null</code> or whitespace values, in which case we'll fall back
+	 * first to {@link #qualifier()} and, if that's also not present, to the default =
+	 * <code>contextId + "FeignClient"</code>.
+	 */
+	String[] qualifiers() default {};
 
 	/**
 	 * @return an absolute URL or resolvable hostname (the protocol is optional).
@@ -108,7 +120,7 @@ public @interface FeignClient {
 	 * factory must produce instances of fallback classes that implement the interface
 	 * annotated by {@link FeignClient}. The fallback factory must be a valid spring bean.
 	 *
-	 * @see feign.hystrix.FallbackFactory for details.
+	 * @see FallbackFactory for details.
 	 * @return fallback factory for the specified Feign client interface
 	 */
 	Class<?> fallbackFactory() default void.class;

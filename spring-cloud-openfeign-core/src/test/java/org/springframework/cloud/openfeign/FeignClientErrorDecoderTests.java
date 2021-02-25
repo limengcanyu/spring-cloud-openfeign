@@ -44,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Michael Cramer
+ * @author Jonatan Ivanov
  */
 @RunWith(SpringJUnit4ClassRunner.class)
 @SpringBootTest(classes = FeignClientErrorDecoderTests.TestConfiguration.class)
@@ -67,8 +68,7 @@ public class FeignClientErrorDecoderTests {
 
 	@Test
 	public void errorDecoderInConfiguration() {
-		assertThat(this.context.getInstance("foo", ErrorDecoder.class))
-				.isInstanceOf(ErrorDecoder.Default.class);
+		assertThat(this.context.getInstance("foo", ErrorDecoder.class)).isInstanceOf(ErrorDecoder.Default.class);
 		assertThat(this.context.getInstance("bar", ErrorDecoder.class)).isNull();
 	}
 
@@ -86,12 +86,12 @@ public class FeignClientErrorDecoderTests {
 
 	@SuppressWarnings({ "unchecked", "ConstantConditions" })
 	private Object getErrorDecoderFromClient(final Object client) {
-		Object invocationHandler = ReflectionTestUtils.getField(client, "h");
+		Object invocationHandlerLambda = ReflectionTestUtils.getField(client, "h");
+		Object invocationHandler = ReflectionTestUtils.getField(invocationHandlerLambda, "arg$2");
 		Map<Method, InvocationHandlerFactory.MethodHandler> dispatch = (Map<Method, InvocationHandlerFactory.MethodHandler>) ReflectionTestUtils
 				.getField(invocationHandler, "dispatch");
 		Method key = new ArrayList<>(dispatch.keySet()).get(0);
-		return ReflectionTestUtils.getField(
-				ReflectionTestUtils.getField(dispatch.get(key), "asyncResponseHandler"),
+		return ReflectionTestUtils.getField(ReflectionTestUtils.getField(dispatch.get(key), "asyncResponseHandler"),
 				"errorDecoder");
 	}
 

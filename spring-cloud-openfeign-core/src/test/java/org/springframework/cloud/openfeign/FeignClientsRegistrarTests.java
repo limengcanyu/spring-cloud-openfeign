@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2020 the original author or authors.
+ * Copyright 2013-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.Collections;
 
 import org.junit.Test;
 
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
@@ -28,10 +29,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * @author Spencer Gibb
  * @author Gang Li
+ * @author Michal Domagala
  */
 public class FeignClientsRegistrarTests {
 
@@ -76,7 +79,7 @@ public class FeignClientsRegistrarTests {
 	private String testGetName(String name) {
 		FeignClientsRegistrar registrar = new FeignClientsRegistrar();
 		registrar.setEnvironment(new MockEnvironment());
-		return registrar.getName(Collections.<String, Object>singletonMap("name", name));
+		return registrar.getName(Collections.singletonMap("name", name));
 	}
 
 	@Test(expected = IllegalArgumentException.class)
@@ -89,8 +92,17 @@ public class FeignClientsRegistrarTests {
 		new AnnotationConfigApplicationContext(FallbackFactoryTestConfig.class);
 	}
 
-	@FeignClient(name = "fallbackTestClient", url = "http://localhost:8080/",
-			fallback = FallbackClient.class)
+	@Test
+	public void shouldPassSubLevelFeignClient() {
+		AnnotationConfigApplicationContext config = new AnnotationConfigApplicationContext();
+		((DefaultListableBeanFactory) config.getBeanFactory()).setAllowBeanDefinitionOverriding(false);
+		config.register(TopLevelSubLevelTestConfig.class);
+		assertThatCode(() -> config.refresh())
+				.as("Case https://github.com/spring-cloud/spring-cloud-openfeign/issues/331 should be solved")
+				.doesNotThrowAnyException();
+	}
+
+	@FeignClient(name = "fallbackTestClient", url = "http://localhost:8080/", fallback = FallbackClient.class)
 	protected interface FallbackClient {
 
 		@RequestMapping(method = RequestMethod.GET, value = "/hello")
@@ -116,9 +128,14 @@ public class FeignClientsRegistrarTests {
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableAutoConfiguration
-	@EnableFeignClients(
-			clients = { FeignClientsRegistrarTests.FallbackFactoryClient.class })
+	@EnableFeignClients(clients = { FeignClientsRegistrarTests.FallbackFactoryClient.class })
 	protected static class FallbackFactoryTestConfig {
+
+	}
+
+	@EnableFeignClients(clients = { org.springframework.cloud.openfeign.feignclientsregistrar.TopLevelClient.class,
+			org.springframework.cloud.openfeign.feignclientsregistrar.sub.SubLevelClient.class })
+	protected static class TopLevelSubLevelTestConfig {
 
 	}
 

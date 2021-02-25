@@ -22,12 +22,20 @@ import java.lang.reflect.Proxy;
 import java.lang.reflect.Type;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.servlet.http.HttpServletRequest;
 
+import feign.Capability;
+import feign.Feign;
 import feign.InvocationHandlerFactory;
 import feign.Request;
 import feign.RequestInterceptor;
@@ -37,6 +45,7 @@ import feign.Retryer;
 import feign.codec.EncodeException;
 import feign.codec.Encoder;
 import feign.codec.ErrorDecoder;
+import feign.micrometer.MicrometerCapability;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -55,8 +64,11 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,11 +78,12 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
 /**
  * @author Eko Kurniawan Khannedy
  * @author Olga Maciaszek-Sharma
+ * @author Ilia Ilinykh
+ * @author Jonatan Ivanov
  */
 @SuppressWarnings("FieldMayBeFinal")
 @RunWith(SpringJUnit4ClassRunner.class)
-@SpringBootTest(classes = FeignClientUsingPropertiesTests.Application.class,
-		webEnvironment = RANDOM_PORT)
+@SpringBootTest(classes = FeignClientUsingPropertiesTests.Application.class, webEnvironment = RANDOM_PORT)
 @TestPropertySource("classpath:feign-properties.properties")
 @DirtiesContext
 public class FeignClientUsingPropertiesTests {
@@ -92,6 +105,10 @@ public class FeignClientUsingPropertiesTests {
 
 	private FeignClientFactoryBean formFactoryBean;
 
+	private FeignClientFactoryBean defaultHeadersAndQuerySingleParamsFeignClientFactoryBean;
+
+	private FeignClientFactoryBean defaultHeadersAndQueryMultipleParamsFeignClientFactoryBean;
+
 	public FeignClientUsingPropertiesTests() {
 		fooFactoryBean = new FeignClientFactoryBean();
 		fooFactoryBean.setContextId("foo");
@@ -108,30 +125,34 @@ public class FeignClientUsingPropertiesTests {
 		formFactoryBean = new FeignClientFactoryBean();
 		formFactoryBean.setContextId("form");
 		formFactoryBean.setType(FeignClientFactoryBean.class);
+
+		this.defaultHeadersAndQuerySingleParamsFeignClientFactoryBean = new FeignClientFactoryBean();
+		this.defaultHeadersAndQuerySingleParamsFeignClientFactoryBean.setContextId("singleValue");
+		this.defaultHeadersAndQuerySingleParamsFeignClientFactoryBean.setType(FeignClientFactoryBean.class);
+
+		this.defaultHeadersAndQueryMultipleParamsFeignClientFactoryBean = new FeignClientFactoryBean();
+		this.defaultHeadersAndQueryMultipleParamsFeignClientFactoryBean.setContextId("multipleValue");
+		this.defaultHeadersAndQueryMultipleParamsFeignClientFactoryBean.setType(FeignClientFactoryBean.class);
 	}
 
 	public FooClient fooClient() {
 		fooFactoryBean.setApplicationContext(applicationContext);
-		return fooFactoryBean.feign(context).target(FooClient.class,
-				"http://localhost:" + port);
+		return fooFactoryBean.feign(context).target(FooClient.class, "http://localhost:" + port);
 	}
 
 	public BarClient barClient() {
 		barFactoryBean.setApplicationContext(applicationContext);
-		return barFactoryBean.feign(context).target(BarClient.class,
-				"http://localhost:" + port);
+		return barFactoryBean.feign(context).target(BarClient.class, "http://localhost:" + port);
 	}
 
 	public UnwrapClient unwrapClient() {
 		unwrapFactoryBean.setApplicationContext(applicationContext);
-		return unwrapFactoryBean.feign(context).target(UnwrapClient.class,
-				"http://localhost:" + port);
+		return unwrapFactoryBean.feign(context).target(UnwrapClient.class, "http://localhost:" + port);
 	}
 
 	public FormClient formClient() {
 		formFactoryBean.setApplicationContext(applicationContext);
-		return formFactoryBean.feign(context).target(FormClient.class,
-				"http://localhost:" + port);
+		return formFactoryBean.feign(context).target(FormClient.class, "http://localhost:" + port);
 	}
 
 	@Test
@@ -160,14 +181,38 @@ public class FeignClientUsingPropertiesTests {
 	}
 
 	@Test
+	public void testSingleValue() {
+		List<String> response = singleValueClient().singleValue();
+		assertThat(response).isEqualTo(Arrays.asList("header", "parameter"));
+	}
+
+	@Test
+	public void testMultipleValue() {
+		List<String> response = multipleValueClient().multipleValue();
+		assertThat(response).isEqualTo(Arrays.asList("header1", "header2", "parameter1", "parameter2"));
+	}
+
+	public SingleValueClient singleValueClient() {
+		this.defaultHeadersAndQuerySingleParamsFeignClientFactoryBean.setApplicationContext(this.applicationContext);
+		return this.defaultHeadersAndQuerySingleParamsFeignClientFactoryBean.feign(this.context)
+				.target(SingleValueClient.class, "http://localhost:" + this.port);
+	}
+
+	public MultipleValueClient multipleValueClient() {
+		this.defaultHeadersAndQueryMultipleParamsFeignClientFactoryBean.setApplicationContext(this.applicationContext);
+		return this.defaultHeadersAndQueryMultipleParamsFeignClientFactoryBean.feign(this.context)
+				.target(MultipleValueClient.class, "http://localhost:" + this.port);
+	}
+
+	@Test
 	public void readTimeoutShouldWorkWhenConnectTimeoutNotSet() {
 		FeignClientFactoryBean readTimeoutFactoryBean = new FeignClientFactoryBean();
 		readTimeoutFactoryBean.setContextId("readTimeout");
 		readTimeoutFactoryBean.setType(FeignClientFactoryBean.class);
 		readTimeoutFactoryBean.setApplicationContext(applicationContext);
 
-		TimeoutClient client = readTimeoutFactoryBean.feign(context)
-				.target(TimeoutClient.class, "http://localhost:" + port);
+		TimeoutClient client = readTimeoutFactoryBean.feign(context).target(TimeoutClient.class,
+				"http://localhost:" + port);
 
 		Request.Options options = getRequestOptions((Proxy) client);
 
@@ -182,8 +227,8 @@ public class FeignClientUsingPropertiesTests {
 		readTimeoutFactoryBean.setType(FeignClientFactoryBean.class);
 		readTimeoutFactoryBean.setApplicationContext(applicationContext);
 
-		TimeoutClient client = readTimeoutFactoryBean.feign(context)
-				.target(TimeoutClient.class, "http://localhost:" + port);
+		TimeoutClient client = readTimeoutFactoryBean.feign(context).target(TimeoutClient.class,
+				"http://localhost:" + port);
 
 		Request.Options options = getRequestOptions((Proxy) client);
 
@@ -191,32 +236,45 @@ public class FeignClientUsingPropertiesTests {
 		assertThat(options.readTimeoutMillis()).isEqualTo(5000);
 	}
 
+	@Test
+	public void clientShouldContainCapabilities() {
+		fooFactoryBean.setApplicationContext(applicationContext);
+		Feign.Builder feignBuilder = fooFactoryBean.feign(context);
+		FooClient fooClient = feignBuilder.target(FooClient.class, "http://localhost:" + port);
+
+		String response = fooClient.foo();
+		assertThat(response).isEqualTo("OK");
+		List<Capability> capabilities = (List) ReflectionTestUtils.getField(feignBuilder, "capabilities");
+		assertThat(capabilities).hasSize(2).hasAtLeastOneElementOfType(NoOpCapability.class)
+				.hasAtLeastOneElementOfType(MicrometerCapability.class);
+	}
+
 	private Request.Options getRequestOptions(Proxy client) {
-		Object invocationHandler = ReflectionTestUtils.getField(client, "h");
+		Object invocationHandlerLambda = ReflectionTestUtils.getField(client, "h");
+		Object invocationHandler = ReflectionTestUtils.getField(invocationHandlerLambda, "arg$2");
 		Map<Method, InvocationHandlerFactory.MethodHandler> dispatch = (Map<Method, InvocationHandlerFactory.MethodHandler>) ReflectionTestUtils
 				.getField(Objects.requireNonNull(invocationHandler), "dispatch");
 		Method key = new ArrayList<>(dispatch.keySet()).get(0);
-		return (Request.Options) ReflectionTestUtils.getField(dispatch.get(key),
-				"options");
+		return (Request.Options) ReflectionTestUtils.getField(dispatch.get(key), "options");
 	}
 
 	protected interface FooClient {
 
-		@RequestMapping(method = RequestMethod.GET, value = "/foo")
+		@GetMapping(path = "/foo")
 		String foo();
 
 	}
 
 	protected interface BarClient {
 
-		@RequestMapping(method = RequestMethod.GET, value = "/bar")
+		@GetMapping(path = "/bar")
 		String bar();
 
 	}
 
 	protected interface UnwrapClient {
 
-		@RequestMapping(method = RequestMethod.GET, value = "/bar") // intentionally /bar
+		@GetMapping(path = "/bar") // intentionally /bar
 		String unwrap() throws IOException;
 
 	}
@@ -226,6 +284,20 @@ public class FeignClientUsingPropertiesTests {
 		@RequestMapping(value = "/form", method = RequestMethod.POST,
 				consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
 		String form(Map<String, String> form);
+
+	}
+
+	protected interface SingleValueClient {
+
+		@GetMapping(path = "/singleValue")
+		List<String> singleValue();
+
+	}
+
+	protected interface MultipleValueClient {
+
+		@GetMapping(path = "/multipleValue")
+		List<String> multipleValue();
 
 	}
 
@@ -244,8 +316,7 @@ public class FeignClientUsingPropertiesTests {
 
 		@RequestMapping(method = RequestMethod.GET, value = "/foo")
 		public String foo(HttpServletRequest request) throws IllegalAccessException {
-			if ("Foo".equals(request.getHeader("Foo"))
-					&& "Bar".equals(request.getHeader("Bar"))) {
+			if ("Foo".equals(request.getHeader("Foo")) && "Bar".equals(request.getHeader("Bar"))) {
 				return "OK";
 			}
 			else {
@@ -253,16 +324,29 @@ public class FeignClientUsingPropertiesTests {
 			}
 		}
 
-		@RequestMapping(method = RequestMethod.GET, value = "/bar")
+		@GetMapping(path = "/bar")
 		public String bar() throws InterruptedException {
-			Thread.sleep(2000L);
+			TimeUnit.SECONDS.sleep(2);
 			return "OK";
 		}
 
-		@RequestMapping(value = "/form", method = RequestMethod.POST,
-				consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+		@PostMapping(path = "/form", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
 		public String form(HttpServletRequest request) {
 			return request.getParameter("form");
+		}
+
+		@GetMapping(path = "/singleValue")
+		public List<String> singleValue(@RequestHeader List<String> singleValueHeaders,
+				@RequestParam List<String> singleValueParameters) {
+			return Stream.of(singleValueHeaders, singleValueParameters).flatMap(Collection::stream)
+					.collect(Collectors.toList());
+		}
+
+		@GetMapping(path = "/multipleValue")
+		public List<String> multipleValue(@RequestHeader List<String> multipleValueHeaders,
+				@RequestParam List<String> multipleValueParameters) {
+			return Stream.of(multipleValueHeaders, multipleValueParameters).flatMap(Collection::stream)
+					.collect(Collectors.toList());
 		}
 
 	}
@@ -306,18 +390,20 @@ public class FeignClientUsingPropertiesTests {
 	public static class FormEncoder implements Encoder {
 
 		@Override
-		public void encode(Object o, Type type, RequestTemplate requestTemplate)
-				throws EncodeException {
+		public void encode(Object o, Type type, RequestTemplate requestTemplate) throws EncodeException {
 			Map<String, String> form = (Map<String, String>) o;
 			StringBuilder builder = new StringBuilder();
 			form.forEach((key, value) -> {
 				builder.append(key + "=" + value + "&");
 			});
 
-			requestTemplate.header(HttpHeaders.CONTENT_TYPE,
-					MediaType.APPLICATION_FORM_URLENCODED_VALUE);
+			requestTemplate.header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED_VALUE);
 			requestTemplate.body(builder.toString());
 		}
+
+	}
+
+	public static class NoOpCapability implements Capability {
 
 	}
 

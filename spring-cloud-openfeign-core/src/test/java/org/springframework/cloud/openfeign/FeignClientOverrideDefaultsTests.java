@@ -16,6 +16,9 @@
 
 package org.springframework.cloud.openfeign;
 
+import java.util.Map;
+
+import feign.Capability;
 import feign.Contract;
 import feign.ExceptionPropagationPolicy;
 import feign.Logger;
@@ -23,17 +26,16 @@ import feign.QueryMapEncoder;
 import feign.Request;
 import feign.RequestInterceptor;
 import feign.RequestLine;
-import feign.RequestTemplate;
 import feign.Retryer;
 import feign.auth.BasicAuthRequestInterceptor;
 import feign.codec.Decoder;
 import feign.codec.Encoder;
 import feign.codec.ErrorDecoder;
+import feign.micrometer.MicrometerCapability;
 import feign.optionals.OptionalDecoder;
 import feign.querymap.BeanQueryMapEncoder;
 import feign.slf4j.Slf4jLogger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -43,7 +45,6 @@ import org.springframework.cloud.openfeign.support.SpringMvcContract;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
@@ -51,11 +52,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Spencer Gibb
+ * @author Jonatan Ivanov
  */
-@RunWith(SpringJUnit4ClassRunner.class)
 @SpringBootTest(classes = FeignClientOverrideDefaultsTests.TestConfiguration.class)
 @DirtiesContext
-public class FeignClientOverrideDefaultsTests {
+class FeignClientOverrideDefaultsTests {
 
 	@Autowired
 	private FeignContext context;
@@ -67,90 +68,97 @@ public class FeignClientOverrideDefaultsTests {
 	private BarClient bar;
 
 	@Test
-	public void clientsAvailable() {
-		assertThat(this.foo).isNotNull();
-		assertThat(this.bar).isNotNull();
+	void clientsAvailable() {
+		assertThat(foo).isNotNull();
+		assertThat(bar).isNotNull();
 	}
 
 	@Test
-	public void overrideDecoder() {
-		Decoder.Default.class.cast(this.context.getInstance("foo", Decoder.class));
-		OptionalDecoder.class.cast(this.context.getInstance("bar", Decoder.class));
+	void overrideDecoder() {
+		Decoder.Default.class.cast(context.getInstance("foo", Decoder.class));
+		OptionalDecoder.class.cast(context.getInstance("bar", Decoder.class));
 	}
 
 	@Test
-	public void overrideEncoder() {
-		Encoder.Default.class.cast(this.context.getInstance("foo", Encoder.class));
-		PageableSpringEncoder.class.cast(this.context.getInstance("bar", Encoder.class));
+	void overrideEncoder() {
+		Encoder.Default.class.cast(context.getInstance("foo", Encoder.class));
+		PageableSpringEncoder.class.cast(context.getInstance("bar", Encoder.class));
 	}
 
 	@Test
-	public void overrideLogger() {
-		Logger.JavaLogger.class.cast(this.context.getInstance("foo", Logger.class));
-		Slf4jLogger.class.cast(this.context.getInstance("bar", Logger.class));
+	void overrideLogger() {
+		Logger.JavaLogger.class.cast(context.getInstance("foo", Logger.class));
+		Slf4jLogger.class.cast(context.getInstance("bar", Logger.class));
 	}
 
 	@Test
-	public void overrideContract() {
-		Contract.Default.class.cast(this.context.getInstance("foo", Contract.class));
-		SpringMvcContract.class.cast(this.context.getInstance("bar", Contract.class));
+	void overrideContract() {
+		Contract.Default.class.cast(context.getInstance("foo", Contract.class));
+		SpringMvcContract.class.cast(context.getInstance("bar", Contract.class));
 	}
 
 	@Test
-	public void overrideLoggerLevel() {
-		assertThat(this.context.getInstance("foo", Logger.Level.class)).isNull();
-		assertThat(this.context.getInstance("bar", Logger.Level.class))
-				.isEqualTo(Logger.Level.HEADERS);
+	void overrideLoggerLevel() {
+		assertThat(context.getInstance("foo", Logger.Level.class)).isNull();
+		assertThat(context.getInstance("bar", Logger.Level.class)).isEqualTo(Logger.Level.HEADERS);
 	}
 
 	@Test
-	public void overrideRetryer() {
-		assertThat(this.context.getInstance("foo", Retryer.class))
-				.isEqualTo(Retryer.NEVER_RETRY);
-		Retryer.Default.class.cast(this.context.getInstance("bar", Retryer.class));
+	void overrideRetryer() {
+		assertThat(context.getInstance("foo", Retryer.class)).isEqualTo(Retryer.NEVER_RETRY);
+		Retryer.Default.class.cast(context.getInstance("bar", Retryer.class));
 	}
 
 	@Test
-	public void overrideErrorDecoder() {
-		assertThat(this.context.getInstance("foo", ErrorDecoder.class)).isNull();
-		ErrorDecoder.Default.class
-				.cast(this.context.getInstance("bar", ErrorDecoder.class));
+	void overrideErrorDecoder() {
+		assertThat(context.getInstance("foo", ErrorDecoder.class)).isNull();
+		ErrorDecoder.Default.class.cast(context.getInstance("bar", ErrorDecoder.class));
 	}
 
 	@Test
-	public void overrideRequestOptions() {
-		assertThat(this.context.getInstance("foo", Request.Options.class)).isNull();
-		Request.Options options = this.context.getInstance("bar", Request.Options.class);
+	void overrideRequestOptions() {
+		assertThat(context.getInstance("foo", Request.Options.class)).isNull();
+		Request.Options options = context.getInstance("bar", Request.Options.class);
 		assertThat(options.connectTimeoutMillis()).isEqualTo(1);
 		assertThat(options.readTimeoutMillis()).isEqualTo(1);
 	}
 
 	@Test
-	public void overrideQueryMapEncoder() {
-		QueryMapEncoder.Default.class
-				.cast(this.context.getInstance("foo", QueryMapEncoder.class));
-		BeanQueryMapEncoder.class
-				.cast(this.context.getInstance("bar", QueryMapEncoder.class));
+	void overrideQueryMapEncoder() {
+		QueryMapEncoder.Default.class.cast(context.getInstance("foo", QueryMapEncoder.class));
+		BeanQueryMapEncoder.class.cast(context.getInstance("bar", QueryMapEncoder.class));
 	}
 
 	@Test
-	public void addRequestInterceptor() {
-		assertThat(this.context.getInstances("foo", RequestInterceptor.class).size())
-				.isEqualTo(1);
-		assertThat(this.context.getInstances("bar", RequestInterceptor.class).size())
-				.isEqualTo(2);
+	void addRequestInterceptor() {
+		assertThat(context.getInstances("foo", RequestInterceptor.class).size()).isEqualTo(1);
+		assertThat(context.getInstances("bar", RequestInterceptor.class).size()).isEqualTo(2);
 	}
 
 	@Test
-	public void exceptionPropagationPolicy() {
-		assertThat(this.context.getInstances("foo", ExceptionPropagationPolicy.class))
-				.isNull();
-		assertThat(this.context.getInstances("bar", ExceptionPropagationPolicy.class))
+	void exceptionPropagationPolicy() {
+		assertThat(context.getInstances("foo", ExceptionPropagationPolicy.class)).isEmpty();
+		assertThat(context.getInstances("bar", ExceptionPropagationPolicy.class))
 				.containsValues(ExceptionPropagationPolicy.UNWRAP);
 	}
 
-	@FeignClient(name = "foo", url = "https://foo",
-			configuration = FooConfiguration.class)
+	@Test
+	void shouldOverrideMicrometerCapability() {
+		assertThat(context.getInstance("foo", MicrometerCapability.class))
+				.isExactlyInstanceOf(TestMicrometerCapability.class);
+		Map<String, Capability> fooCapabilities = context.getInstances("foo", Capability.class);
+		assertThat(fooCapabilities).hasSize(1);
+		assertThat(fooCapabilities.get("micrometerCapability")).isExactlyInstanceOf(TestMicrometerCapability.class);
+
+		assertThat(context.getInstance("bar", MicrometerCapability.class))
+				.isExactlyInstanceOf(TestMicrometerCapability.class);
+		Map<String, Capability> barCapabilities = context.getInstances("bar", Capability.class);
+		assertThat(barCapabilities).hasSize(2);
+		assertThat(barCapabilities.get("micrometerCapability")).isExactlyInstanceOf(TestMicrometerCapability.class);
+		assertThat(barCapabilities.get("noOpCapability")).isExactlyInstanceOf(NoOpCapability.class);
+	}
+
+	@FeignClient(name = "foo", url = "https://foo", configuration = FooConfiguration.class)
 	interface FooClient {
 
 		@RequestLine("GET /")
@@ -158,8 +166,7 @@ public class FeignClientOverrideDefaultsTests {
 
 	}
 
-	@FeignClient(name = "bar", url = "https://bar",
-			configuration = BarConfiguration.class)
+	@FeignClient(name = "bar", url = "https://bar", configuration = BarConfiguration.class)
 	interface BarClient {
 
 		@RequestMapping(value = "/", method = RequestMethod.GET)
@@ -174,11 +181,13 @@ public class FeignClientOverrideDefaultsTests {
 
 		@Bean
 		RequestInterceptor defaultRequestInterceptor() {
-			return new RequestInterceptor() {
-				@Override
-				public void apply(RequestTemplate template) {
-				}
+			return template -> {
 			};
+		}
+
+		@Bean
+		MicrometerCapability micrometerCapability() {
+			return new TestMicrometerCapability();
 		}
 
 	}
@@ -248,6 +257,19 @@ public class FeignClientOverrideDefaultsTests {
 		public ExceptionPropagationPolicy exceptionPropagationPolicy() {
 			return ExceptionPropagationPolicy.UNWRAP;
 		}
+
+		@Bean
+		public Capability noOpCapability() {
+			return new NoOpCapability();
+		}
+
+	}
+
+	private static class TestMicrometerCapability extends feign.micrometer.MicrometerCapability {
+
+	}
+
+	private static class NoOpCapability implements Capability {
 
 	}
 

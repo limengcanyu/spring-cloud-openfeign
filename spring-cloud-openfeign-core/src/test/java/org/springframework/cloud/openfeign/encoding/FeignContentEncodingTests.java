@@ -25,8 +25,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.cloud.client.DefaultServiceInstance;
 import org.springframework.cloud.loadbalancer.annotation.LoadBalancerClient;
 import org.springframework.cloud.loadbalancer.core.ServiceInstanceListSupplier;
+import org.springframework.cloud.loadbalancer.support.ServiceInstanceListSuppliers;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.cloud.openfeign.encoding.app.client.InvoiceClient;
 import org.springframework.cloud.openfeign.encoding.app.domain.Invoice;
@@ -34,7 +36,6 @@ import org.springframework.cloud.openfeign.test.NoSecurityConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
@@ -47,11 +48,8 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
  *
  * @author Jakub Narloch
  */
-@SpringBootTest(classes = FeignContentEncodingTests.Application.class,
-		webEnvironment = RANDOM_PORT,
-		value = { "feign.compression.request.enabled=true",
-				"hystrix.command.default.execution.isolation.strategy=SEMAPHORE",
-				"ribbon.OkToRetryOnAllOperations=false" })
+@SpringBootTest(classes = FeignContentEncodingTests.Application.class, webEnvironment = RANDOM_PORT,
+		value = { "feign.compression.request.enabled=true", "ribbon.OkToRetryOnAllOperations=false" })
 @RunWith(SpringJUnit4ClassRunner.class)
 public class FeignContentEncodingTests {
 
@@ -65,8 +63,7 @@ public class FeignContentEncodingTests {
 		final List<Invoice> invoices = Invoices.createInvoiceList(50);
 
 		// when
-		final ResponseEntity<List<Invoice>> response = this.invoiceClient
-				.saveInvoices(invoices);
+		final ResponseEntity<List<Invoice>> response = this.invoiceClient.saveInvoices(invoices);
 
 		// then
 		assertThat(response).isNotNull();
@@ -78,8 +75,7 @@ public class FeignContentEncodingTests {
 
 	@EnableFeignClients(clients = InvoiceClient.class)
 	@LoadBalancerClient(name = "local", configuration = LocalClientConfiguration.class)
-	@SpringBootApplication(
-			scanBasePackages = "org.springframework.cloud.openfeign.encoding.app")
+	@SpringBootApplication(scanBasePackages = "org.springframework.cloud.openfeign.encoding.app")
 	@Import(NoSecurityConfiguration.class)
 	public static class Application {
 
@@ -92,9 +88,9 @@ public class FeignContentEncodingTests {
 		private int port = 0;
 
 		@Bean
-		public ServiceInstanceListSupplier staticServiceInstanceListSupplier(
-				Environment env) {
-			return ServiceInstanceListSupplier.fixed(env).instance(port, "local").build();
+		public ServiceInstanceListSupplier staticServiceInstanceListSupplier() {
+			return ServiceInstanceListSuppliers.from("local",
+					new DefaultServiceInstance("local-1", "local", "localhost", port, false));
 		}
 
 	}

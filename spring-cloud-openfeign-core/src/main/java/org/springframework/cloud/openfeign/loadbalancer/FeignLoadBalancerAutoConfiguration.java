@@ -19,11 +19,15 @@ package org.springframework.cloud.openfeign.loadbalancer;
 import feign.Client;
 import feign.Feign;
 
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.cloud.client.loadbalancer.LoadBalancerAutoConfiguration;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
+import org.springframework.cloud.loadbalancer.config.BlockingLoadBalancerClientAutoConfiguration;
+import org.springframework.cloud.loadbalancer.support.LoadBalancerClientFactory;
 import org.springframework.cloud.openfeign.FeignAutoConfiguration;
 import org.springframework.cloud.openfeign.support.FeignHttpClientProperties;
 import org.springframework.context.annotation.Configuration;
@@ -37,15 +41,15 @@ import org.springframework.context.annotation.Import;
  * @since 2.2.0
  */
 @ConditionalOnClass(Feign.class)
-@ConditionalOnBean(LoadBalancerClient.class)
+@ConditionalOnBean({ LoadBalancerClient.class, LoadBalancerClientFactory.class })
 @AutoConfigureBefore(FeignAutoConfiguration.class)
+@AutoConfigureAfter({ BlockingLoadBalancerClientAutoConfiguration.class, LoadBalancerAutoConfiguration.class })
 @EnableConfigurationProperties(FeignHttpClientProperties.class)
 @Configuration(proxyBeanMethods = false)
 // Order is important here, last should be the default, first should be optional
 // see
 // https://github.com/spring-cloud/spring-cloud-netflix/issues/2086#issuecomment-316281653
-@Import({ HttpClientFeignLoadBalancerConfiguration.class,
-		OkHttpFeignLoadBalancerConfiguration.class,
+@Import({ HttpClientFeignLoadBalancerConfiguration.class, OkHttpFeignLoadBalancerConfiguration.class,
 		DefaultFeignLoadBalancerConfiguration.class })
 public class FeignLoadBalancerAutoConfiguration {
 

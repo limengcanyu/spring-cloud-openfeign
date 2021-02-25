@@ -15,7 +15,6 @@ eureka:
     fetchRegistry: false
 #error:
 #  path: /myerror
-hystrix.command.default.execution.isolation.thread.timeoutInMilliseconds: 60000
 ribbon:
   ConnectTimeout: 3001
   ReadTimeout: 60001
@@ -30,10 +29,16 @@ badClients:
 endpoints:
   health:
     sensitive: false
-hystrix:
-  shareSecurityContext: true
 feignClient:
   localappName: localapp
   methodLevelRequestMappingPath: /hello2
   myPlaceholderHeader: myPlaceholderHeaderValue
 management.endpoints.web.expose: '*'
+
+---
+spring.config.activate.on-profile: no-metrics
+feign.metrics.enabled: false
+
+---
+spring.config.activate.on-profile: no-foo-metrics
+feign.client.config.foo.metrics.enabled: false
